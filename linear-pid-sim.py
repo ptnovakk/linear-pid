@@ -7,8 +7,8 @@ Perfect simulation → real hardware bridge
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
-from matplotlib.patches import Circle, Rectangle
+from matplotlib.widgets import Slider, Button
+from matplotlib.patches import Circle, Rectangle, FancyBboxPatch
 from matplotlib.animation import FuncAnimation
 
 # ========================== INITIAL STATE ==========================
@@ -47,15 +47,19 @@ ax_main.set_adjustable('box')
 ax_main.axis('off')
 ax_main.set_facecolor('none')
 
-# Create a subtle vertical gradient background (black at bottom -> dark green at top)
-g_h = 256
+# Create a full-figure vertical gradient background (black at bottom -> dark green at top)
+# using an axes that spans the entire figure so the gradient fills the window.
+g_h = 512
 grad = np.ones((g_h, 1, 3))
-top = np.array([6/255, 30/255, 12/255])  # dark green
+top = np.array([6/255, 30/255, 12/255])  # dark green (matches earlier choice)
 bot = np.array([0, 0, 0])               # black
 for i in range(g_h):
-    t = i / (g_h - 1)
-    grad[i, 0, :] = bot * (1 - t) + top * t
-ax_main.imshow(grad, aspect='auto', extent=( -0.3, 0.3, -0.25, 0.45 ), zorder=-10)
+    tt = i / (g_h - 1)
+    grad[i, 0, :] = bot * (1 - tt) + top * tt
+ax_bg = fig.add_axes([0, 0, 1, 1], zorder=-100)
+ax_bg.imshow(grad, aspect='auto', extent=(0, 1, 0, 1), transform=ax_bg.transAxes)
+ax_bg.axis('off')
+fig.patch.set_facecolor((0, 0, 0, 0))
 
 # Rail: we'll draw a glowing core + bright rod
 rail_glow_outer, = ax_main.plot([], [], color='#AAFF66', lw=36, alpha=0.06, solid_capstyle='round', zorder=2)
@@ -71,6 +75,114 @@ ax_main.add_patch(ball_shadow)
 ax_main.add_patch(ball_main)
 ax_main.add_patch(ball_highlight)
 
+# ----------------------- small hamburger menu + dropdown -----------------------
+# menu (hamburger) icon in the top-left that toggles a small dropdown
+ax_menu = plt.axes([0.02, 0.92, 0.05, 0.05], facecolor='none', zorder=30)
+ax_menu.axis('off')
+# draw three small lines to look like a hamburger icon
+_hlx = [0.12, 0.88]
+for y in (0.75, 0.5, 0.25):
+    ax_menu.plot(_hlx, [y, y], color='white', lw=2.0, solid_capstyle='round')
+# add a circular subtle backdrop for the hamburger to make it stand out
+menu_back = Circle((0.5, 0.5), 0.52, transform=ax_menu.transAxes,
+                   facecolor=(0, 0.03, 0, 0.28), edgecolor=(1,1,1,0.03), zorder=29)
+ax_menu.add_patch(menu_back)
+
+# dropdown background (initially hidden)
+ax_dropdown_bg = plt.axes([0.02, 0.78, 0.20, 0.14], facecolor='none', zorder=29)
+ax_dropdown_bg.axis('off')
+drop_box = FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0.06",
+                          transform=ax_dropdown_bg.transAxes,
+                          facecolor=(top[0], top[1], top[2], 0.94),
+                          edgecolor=(1.0, 1.0, 1.0, 0.06), zorder=29)
+ax_dropdown_bg.add_patch(drop_box)
+
+# option buttons placed as separate axes so they receive clicks easily
+ax_opt1 = plt.axes([0.03, 0.82, 0.16, 0.055], zorder=31)
+ax_opt2 = plt.axes([0.03, 0.76, 0.16, 0.055], zorder=31)
+ax_opt3 = plt.axes([0.03, 0.70, 0.16, 0.055], zorder=31)
+ax_quit = plt.axes([0.03, 0.64, 0.16, 0.055], zorder=31)
+
+btn_opt1 = Button(ax_opt1, 'option1', color=(0.00, 0.08, 0.02, 0.0), hovercolor=(0.10, 0.28, 0.10))
+btn_opt2 = Button(ax_opt2, 'option2', color=(0.00, 0.08, 0.02, 0.0), hovercolor=(0.10, 0.28, 0.10))
+btn_opt3 = Button(ax_opt3, 'option3', color=(0.00, 0.08, 0.02, 0.0), hovercolor=(0.10, 0.28, 0.10))
+btn_quit = Button(ax_quit, 'Quit', color=(0.14, 0.02, 0.02, 0.0), hovercolor=(0.36, 0.06, 0.06))
+
+# style the button labels: white, larger, bold
+for b in (btn_opt1, btn_opt2, btn_opt3, btn_quit):
+    b.label.set_color('white')
+    b.label.set_fontsize(12)
+    b.label.set_fontweight('bold')
+
+for a in (ax_opt1, ax_opt2, ax_opt3, ax_quit):
+    a.patch.set_alpha(0.0)
+    a.set_visible(False)
+
+ax_dropdown_bg.set_visible(False)
+drop_box.set_visible(False)
+
+menu_visible = False
+
+def _set_menu_visible(visible: bool):
+    """Helper to set visibility of all dropdown items."""
+    for a in (ax_opt1, ax_opt2, ax_opt3, ax_quit):
+        a.set_visible(visible)
+    drop_box.set_visible(visible)
+    fig.canvas.draw_idle()
+
+def _toggle_menu(event):
+    """Toggle the dropdown when the hamburger icon is clicked."""
+    global menu_visible
+    # only toggle when the menu area is clicked
+    if event.inaxes == ax_menu:
+        menu_visible = not menu_visible
+        _set_menu_visible(menu_visible)
+
+fig.canvas.mpl_connect('button_press_event', _toggle_menu)
+
+def _option1_clicked(event):
+    """Action for option1: set the setpoint to 0 and close menu."""
+    global menu_visible
+    try:
+        s_sp.set_val(0.0)
+    except Exception:
+        pass
+    menu_visible = False
+    _set_menu_visible(False)
+
+def _option2_clicked(event):
+    """Action for option2: reset PID gains to defaults."""
+    global menu_visible
+    try:
+        s_kp.set_val(22.0)
+        s_ki.set_val(1.2)
+        s_kd.set_val(4.5)
+    except Exception:
+        pass
+    menu_visible = False
+    _set_menu_visible(False)
+
+def _option3_clicked(event):
+    """Action for option3: center the ball and zero velocity."""
+    global menu_visible, x, v, integral, prev_error
+    x = 0.0
+    v = 0.0
+    integral = 0.0
+    prev_error = 0.0
+    menu_visible = False
+    _set_menu_visible(False)
+
+def _quit_clicked(event):
+    """Quit the simulation: close figure/window."""
+    try:
+        plt.close(fig)
+    except Exception:
+        pass
+
+btn_opt1.on_clicked(_option1_clicked)
+btn_opt2.on_clicked(_option2_clicked)
+btn_opt3.on_clicked(_option3_clicked)
+btn_quit.on_clicked(_quit_clicked)
 # ----------------------- inset real-time plot (see-through) -----------------------
 # Top-right inset showing setpoint and position over time
 ax_plot = plt.axes([0.62, 0.64, 0.34, 0.27], facecolor=(0, 0, 0, 0.12), zorder=7)
